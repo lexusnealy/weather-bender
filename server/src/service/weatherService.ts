@@ -1,73 +1,156 @@
-import fs from "fs";
-import { v4 as uuidv4 } from "uuid";
+import dotenv from "dotenv";
+dotenv.config();
+import dayjs, { type Dayjs } from "dayjs";
 
-// TODO: Define a City class with name and id properties
-class City {
-  name: string;
-  id: string;
+// TODO: Define an interface for the Coordinates object
+interface Coordinates {
+  lat: number;
+  lon: number;
+}
+// TODO: Define a class for the Weather object
+class Weather {
+  tempF: number;
+  humidity: number;
+  windSpeed: number;
+  icon: string;
+  date: Dayjs | string;
+  city: string;
+  iconDescription: string;
 
-  constructor(name: string, id: string) {
-    this.name = name;
-    this.id = id;
+  constructor(
+    tempF: number,
+    humidity: number,
+    windSpeed: number,
+    icon: string,
+    date: Dayjs | string,
+    city: string,
+    iconDescription: string
+  ) {
+    this.tempF = tempF;
+    this.humidity = humidity;
+    this.windSpeed = windSpeed;
+    this.icon = icon;
+    this.date = date;
+    this.city = city;
+    this.iconDescription = iconDescription;
   }
 }
-// TODO: Complete the HistoryService class  (OUR CRUD Methods)
-class HistoryService {
-  //console.log("HistoryService");
-  // TODO: Define a read method that reads from the searchHistory.json file
-  async read() {
-    // ES5 Syntax with and error first callback function
-    return await fs.promises.readFile("./db/db.json", "utf8");
+// TODO: Complete the WeatherService class
+class WeatherService {
+  // TODO: Define the baseURL, API key, and city name properties
+  private baseURL: string = process.env.API_BASE_URL || "https://api.openweathermap.org/";
+  private apiKey: string = process.env.API_KEY || "3a05adc72178c68d3b4de877b8fe5804";
+  private cityName?: any;
+
+  // TODO: Create fetchLocationData method
+  private async fetchLocationData(query: any) {
+    return fetch(query)
+      .then((response) => response.json())
+      .then((data) => {
+        const { lat, lon } = data[0];
+        return { lat, lon };
+      });
   }
 
-  // TODO: Define a write method that writes the updated cities array to the searchHistory.json file
-  private async write(cities: City[]) {
-    fs.writeFile("./db/db.json", JSON.stringify(cities), (err) => {
-      if (err) {
-        console.log(err);
-        return err.message;
-      } else {
-        console.log("File written successfully\n");
-        //console.log('The written has the following contents:');
-        // console.log(fs.readFileSync('../../db/db.json', 'utf8'));
-        return "File written successfully";
-      }
-    });
+  // TODO: Create destructureLocationData method
+  private destructureLocationData(locationData: any) {
+    // console.log(locationData);
+    const { lat, lon } = locationData;
+    return { lat, lon };
   }
 
-  // TODO: Define a getCities method that reads the cities from the searchHistory.json file and returns them as an array of City objects
-  async getCities(): Promise<City[]> {
-    const data = await this.read();
-    console.log("Get Cities: ", data); // [ {"name": "New York", "id": "1"}, {"name": "Los Angeles", "id": "2"} ]  JSON string of objects
-    // Convert JSON string to array of City objects
-    if (data === undefined) {
-      return [];
+  // TODO: Create buildGeocodeQuery method
+  private buildGeocodeQuery(): string {
+    // console.log(`${this.baseURL}geo/1.0/direct?q=${this.cityName}&limit=1&appid=${this.apiKey}`)
+    return `${this.baseURL}/geo/1.0/direct?q=${this.cityName}&limit=1&appid=${this.apiKey}`;
+  }
+
+  // TODO: Create buildWeatherQuery method
+  private buildWeatherQuery(coordinates: any) {
+    const { lat, lon } = coordinates;
+    // console.log(`${this.baseURL}data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${this.apiKey}&units=imperial`);
+    return `${this.baseURL}/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${this.apiKey}&units=imperial`;
+  }
+  // TODO: Create fetchAndDestructureLocationData method
+  private async fetchAndDestructureLocationData(): Promise<Coordinates> {
+    try {
+      const geoQuery = this.buildGeocodeQuery();
+      console.log("geoQuery", geoQuery);
+      const locationData = await this.fetchLocationData(geoQuery);
+      const destructureLocationData =
+        this.destructureLocationData(locationData);
+      return destructureLocationData;
+    } catch (error: any) {
+      console.error("Error fetching and destructuring location data:", error);
+      throw error; // Rethrow the error for further handling if needed
     }
-    const citiesArray = JSON.parse(data);
-    return citiesArray;
   }
 
-  // TODO Define an addCity method that adds a city to the searchHistory.json file
-  async addCity(city: string) {
-    // Verify that we RECIEVED the city name (Data)
-    // Create a new City object
-    const tempCity = new City(city, uuidv4());
+  // TODO: Create fetchWeatherData method
 
-    // IF we want to ADD and NEW CITY to our ARRAY (Exisitng dataset)
-    const currentCitiesData = await this.getCities(); // [{ name: 'New York', id: '1' }, { name: 'Los Angeles', id: '2' }]
-    currentCitiesData.push(tempCity); // typoOf JS ARRAY
-    this.write(currentCitiesData);
+  private async fetchWeatherData(coordinates: Coordinates): Promise<any> {
+    try {
+      const response = await fetch(this.buildWeatherQuery(coordinates));
+      if (!response.ok) {
+        throw new Error("Failed to fetch weather data");
+      }
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.log(error);
+      throw error;
+    }
   }
 
-  // * BONUS TODO: Define a removeCity method that removes a city from the searchHistory.json file
-  async removeCity(id: string) {
-    const currentCitiesData = await this.getCities();
-    const updatedCitiesData = currentCitiesData.filter(
-      (city: City) => city.id !== id
+  // TODO: Build parseCurrentWeather method
+  private parseCurrentWeather(response: any) {
+    const data = response.list[0];
+    const parsedDate = dayjs.unix(data.dt).format("MM/DD/YYYY");
+    const weather = new Weather(
+      data.main.temp,
+      data.main.humidity,
+      data.wind.speed,
+      data.weather[0].icon,
+      parsedDate,
+      this.cityName,
+      data.weather[0].description
     );
-    await this.write(updatedCitiesData);
-    return updatedCitiesData;
+    return weather;
+  }
+  // TODO: Complete buildForecastArray method
+  private buildForecastArray(currentWeather: Weather, weatherData: any[]) {
+    const weatherForecast: Weather[] = [currentWeather];
+    const specificWeatherData = weatherData.filter((data) => {
+      return data.dt_txt.includes("12:00:00");
+    });
+    for (const day of specificWeatherData) {
+      weatherForecast.push(
+        new Weather(
+          day.main.temp,
+          day.main.humidity,
+          day.wind.speed,
+          day.weather[0].icon,
+          dayjs.unix(day.dt).format("MM/DD/YYYY"),
+          this.cityName,
+          day.weather[0].description
+        )
+      );
+    }
+
+    return weatherForecast;
+  }
+  // TODO: Complete getWeatherForCity method
+  async getWeatherForCity(city: string) {
+    this.cityName = city;
+    const coordinates = await this.fetchAndDestructureLocationData();
+    const weatherData = await this.fetchWeatherData(coordinates);
+    const currentWeather = await this.parseCurrentWeather(weatherData);
+    const forecastArray = await this.buildForecastArray(
+      currentWeather,
+      weatherData.list
+    );
+    return forecastArray;
   }
 }
 
-export default new HistoryService();
+export default new WeatherService();
